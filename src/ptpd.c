@@ -181,7 +181,6 @@ int ptpd_msg_handle_routine(MessageData *inMsgData)
 
 void *ptpd_msg_ipc_thread(void *arg)
 {
-    int fd_fifo = -1;/* for msg comm with airplayd */
     int max_fd = 0, KeepLoop = 1;
     fd_set rfds;
     MessageData msgBuff;
@@ -206,7 +205,7 @@ void *ptpd_msg_ipc_thread(void *arg)
 
         if (retval > 0)
         {
-            if (FD_ISSET(fd_fifo, &rfds))
+            if (FD_ISSET(gMsgFifoFd, &rfds))
             {
                 memset(&msgBuff, 0, sizeof(msgBuff));
                 read(fd_fifo, &msgBuff, sizeof(MessageData));
@@ -216,7 +215,7 @@ void *ptpd_msg_ipc_thread(void *arg)
         }
     }
 
-    close(fd_fifo);
+    close(gMsgFifoFd);
 
     return (void *)0;
 }
@@ -254,15 +253,6 @@ main(int argc, char **argv)
 
 	timingDomain.electionLeft = 10;
 
-	/* Initialize run time options with command line arguments */
-	if (!(ptpClock = ptpdStartup(argc, argv, &ret, &rtOpts))) {
-		if (ret != 0 && !rtOpts.checkConfigOnly)
-			ERROR(USER_DESCRIPTION" startup failed\n");
-		return ret;
-	}
-
-	timingDomain.electionDelay = rtOpts.electionDelay;
-
 #ifdef APTP
       if (init_fifo_msg_comm() != 0)
       {
@@ -289,6 +279,15 @@ main(int argc, char **argv)
           return -1;
       }
 #endif
+
+	/* Initialize run time options with command line arguments */
+	if (!(ptpClock = ptpdStartup(argc, argv, &ret, &rtOpts))) {
+		if (ret != 0 && !rtOpts.checkConfigOnly)
+			ERROR(USER_DESCRIPTION" startup failed\n");
+		return ret;
+	}
+
+	timingDomain.electionDelay = rtOpts.electionDelay;
 
 	/* configure PTP TimeService */
 	timingDomain.services[0] = &ptpClock->timingService;
