@@ -208,7 +208,7 @@ void *ptpd_msg_ipc_thread(void *arg)
             if (FD_ISSET(gMsgFifoFd, &rfds))
             {
                 memset(&msgBuff, 0, sizeof(msgBuff));
-                read(fd_fifo, &msgBuff, sizeof(MessageData));
+                read(gMsgFifoFd, &msgBuff, sizeof(MessageData));
 
                 ptpd_msg_handle_routine(&msgBuff);
             }
