@@ -73,6 +73,8 @@ RunTimeOpts rtOpts;			/* statically allocated run-time
 #ifdef APTP
 
 PTPSharedInternalData *gAptpShm = NULL;
+int gShmId = 0;
+int gMsgFifoFd = -1;
 
 PTPSharedInternalData* PTPClockShmGet(void)
 {
@@ -107,6 +109,8 @@ PTPSharedInternalData* PTPClockShmInit(void)
                 shmem = shmat( shmid,( const void* )0,0 );
         }
     }
+    
+    gShmId = shmid;
 
     if (shmem == NULL)
     {
@@ -178,18 +182,26 @@ int ptpd_msg_handle_routine(MessageData *inMsgData)
 void *ptpd_msg_ipc_thread(void *arg)
 {
     int fd_fifo = -1;/* for msg comm with airplayd */
-    int max_fd = 0;
+    int max_fd = 0, KeepLoop = 1;
     fd_set rfds;
     MessageData msgBuff;
     
-    fd_fifo = open(APTPD_MSG_FIFO_NAME, O_RDWR);
-    DBG("%s,%d, fd_fifo:%d\n", __func__, __LINE__, fd_fifo);
+    gMsgFifoFd = open(APTPD_MSG_FIFO_NAME, O_RDWR);
+    DBG(USER_DESCRIPTION" open fifo msg fd [%d]\n", gMsgFifoFd);
+
+    if (gMsgFifoFd <= 0)
+    {
+        DBG(USER_DESCRIPTION" open fifo msg fd err:%d, %s\n", errno, strerror(errno));
+        return (void*)0;
+    }
     
-    while (1)
+    while (KeepLoop)
     {
         FD_ZERO(&rfds);
-        FD_SET(fd_fifo, &rfds);
-        max_fd = fd_fifo;
+        FD_SET(gMsgFifoFd, &rfds);
+
+        max_fd = gMsgFifoFd;
+        
         int retval = select(max_fd + 1, &rfds, NULL, NULL, NULL);
 
         if (retval > 0)

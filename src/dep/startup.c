@@ -130,6 +130,19 @@ void catchSignals(int sig)
 void
 do_signal_close(PtpClock * ptpClock)
 {
+#ifdef APTP
+      DBG("Clean up share mem and fifo fd.\n");
+      if (gMsgFifoFd > 0)
+        close(gMsgFifoFd);
+      
+      unlink(APTPD_MSG_FIFO_NAME);
+
+      if (gAptpShm != NULL)
+        shmdt(gAptpShm);
+
+      if (gShmId)
+        shmctl(gShmId, IPC_RMID, 0);     
+#endif
 
 	timingDomain.shutdown(&timingDomain);
 

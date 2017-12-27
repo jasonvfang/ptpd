@@ -228,7 +228,6 @@ typedef struct {
 	unsigned char	ipAddress[45];
 } MessageData;
 
-
 #define APTP_SHM_ID 36658
 typedef unsigned long long uint64_t;
 
@@ -248,6 +247,8 @@ typedef struct {
 } PTPSharedInternalData;
 
 extern PTPSharedInternalData *gAptpShm;
+extern int gShmId;
+extern int gMsgFifoFd;
 
 PTPSharedInternalData* PTPClockShmInit(void);
 
