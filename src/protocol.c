@@ -187,6 +187,33 @@ findSyncDestination(TimeInternal *timeStamp, const RunTimeOpts *rtOpts, PtpClock
 
 }
 
+
+#ifdef APTP
+#ifndef NSEC_PER_SEC
+#define NSEC_PER_SEC 1000000000ull
+#endif
+
+uint64_t PLAT_ntohll(uint64_t x)
+{
+	return( (ntohl(1) == 1) ? x : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32) );
+}
+
+
+void flush_aptp_shm_data(PtpClock *ptpClock)
+{
+    //displayPtpClock(ptpClock);
+    memcpy(&(gAptpShm->clockIdentity), &(ptpClock->parentDS.parentPortIdentity.clockIdentity), CLOCK_IDENTITY_LENGTH);
+    gAptpShm->clockIdentity = PLAT_ntohll(gAptpShm->clockIdentity);
+    //printf(" gAptpShm->clockIdentity=[%llx]\n",  gAptpShm->clockIdentity);
+    memcpy(&(gAptpShm->internalData), &(ptpClock->currentDS.offsetFromMaster), sizeof(gAptpShm->internalData));
+    
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    gAptpShm->local_time = ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;    
+}
+#endif
+
+
 void addForeign(Octet*,MsgHeader*,PtpClock*, UInteger8, UInteger32);
 
 /* loop forever. doState() has a switch for the actions and events to be
@@ -270,6 +297,10 @@ protocol(RunTimeOpts *rtOpts, PtpClock *ptpClock)
 		} else {
 			doState(rtOpts, ptpClock);
 		}
+
+#ifdef APTP
+            flush_aptp_shm_data(ptpClock);
+#endif
 
 		if(ptpClock->disabled && ptpClock->portDS.portState != PTP_DISABLED) {
 			toState(PTP_DISABLED, rtOpts, ptpClock);

@@ -61,16 +61,170 @@
 RunTimeOpts rtOpts;			/* statically allocated run-time
 					 * configuration data */
 
-Boolean startupInProgress;
+ /*
+  * Global variable with the main PTP port. This is used to show the current state in DBG()/message()
+  * without having to pass the pointer everytime.
+  *
+  * if ptpd is extended to handle multiple ports (eg, to instantiate a Boundary Clock),
+  * then DBG()/message() needs a per-port pointer argument
+  */
+ PtpClock *G_ptpClock = NULL;
+                     
+#ifdef APTP
 
-/*
- * Global variable with the main PTP port. This is used to show the current state in DBG()/message()
- * without having to pass the pointer everytime.
- *
- * if ptpd is extended to handle multiple ports (eg, to instantiate a Boundary Clock),
- * then DBG()/message() needs a per-port pointer argument
- */
-PtpClock *G_ptpClock = NULL;
+PTPSharedInternalData *gAptpShm = NULL;
+
+PTPSharedInternalData* PTPClockShmGet(void)
+{
+	PTPSharedInternalData* shmem = NULL;
+	int shmid=shmget( APTP_SHM_ID, 0, 0);
+	if(shmid != -1)
+		shmem = shmat( shmid,( const void* )0,0 );
+	return shmem;
+}
+
+
+PTPSharedInternalData* PTPClockShmInit(void)
+{
+    PTPSharedInternalData* shmem = NULL;
+    int shmid=shmget( APTP_SHM_ID, sizeof(PTPSharedInternalData)+128, 0666 | IPC_CREAT | IPC_EXCL );
+
+    if (shmid != -1)
+    {
+        shmem = shmat( shmid, ( const void* )0,0 );
+        if(shmem)
+        {
+            memset(shmem, 0, sizeof(PTPSharedInternalData));
+            shmem->size = sizeof(PTPSharedInternalData);
+        }
+    }
+    else
+    {
+        if(EEXIST == errno || EINVAL == errno)
+        {
+            shmid=shmget( APTP_SHM_ID, 0, 0);
+            if(shmid != -1)
+                shmem = shmat( shmid,( const void* )0,0 );
+        }
+    }
+
+    if (shmem == NULL)
+    {
+        DBG( "%s,%d: fail of get share memory\n", __func__, __LINE__);
+        return NULL;
+    }
+
+    return shmem;
+}
+
+int init_fifo_msg_comm(void)
+{
+    int res = 0;
+
+    DBG("Aptpd Create the fifo pipe %s.\n", APTPD_MSG_FIFO_NAME);
+
+    unlink(APTPD_MSG_FIFO_NAME);
+    
+    res = mkfifo(APTPD_MSG_FIFO_NAME, O_CREAT |0666);
+    if(res != 0)
+    {
+        DBG("Could not create fifo %s\n", APTPD_MSG_FIFO_NAME);
+        return -1;
+    }
+
+    return res;
+}
+
+
+int ptpd_msg_handle_routine(MessageData *inMsgData)
+{
+    int ret = 0;
+    
+    if (inMsgData == NULL)
+        return -1;
+
+    switch (inMsgData->opCode)
+    {
+        case AddressApiAdd:
+        {
+            DBG(USER_DESCRIPTION" recvd peer add msg, peer addr=[%s]\n", inMsgData->ipAddress);
+
+            G_ptpClock->rtOpts->ipMode = IPMODE_UNICAST;/* switch to unicast mode */
+
+            G_ptpClock->rtOpts->unicastDestinationsSet = TRUE;
+
+            memset(G_ptpClock->rtOpts->unicastDestinations, 0, MAXHOSTNAMELEN * UNICAST_MAX_DESTINATIONS);
+            strncpy(&G_ptpClock->rtOpts->unicastDestinations[0], inMsgData->ipAddress, MAXHOSTNAMELEN);
+        }
+        break;
+
+        case AddressApiDelete:
+        {
+            DBG(USER_DESCRIPTION" recvd peer delete msg, peer addr=[%s]\n", inMsgData->ipAddress);
+            G_ptpClock->rtOpts->unicastDestinationsSet = FALSE;
+            memset(G_ptpClock->rtOpts->unicastDestinations, 0, MAXHOSTNAMELEN * UNICAST_MAX_DESTINATIONS);            
+        }
+        break;
+
+        default:
+            break;
+    }
+
+
+    return ret;
+}
+
+
+void *ptpd_msg_ipc_thread(void *arg)
+{
+    int fd_fifo = -1;/* for msg comm with airplayd */
+    int max_fd = 0;
+    fd_set rfds;
+    MessageData msgBuff;
+    
+    fd_fifo = open(APTPD_MSG_FIFO_NAME, O_RDWR);
+    DBG("%s,%d, fd_fifo:%d\n", __func__, __LINE__, fd_fifo);
+    
+    while (1)
+    {
+        FD_ZERO(&rfds);
+        FD_SET(fd_fifo, &rfds);
+        max_fd = fd_fifo;
+        int retval = select(max_fd + 1, &rfds, NULL, NULL, NULL);
+
+        if (retval > 0)
+        {
+            if (FD_ISSET(fd_fifo, &rfds))
+            {
+                memset(&msgBuff, 0, sizeof(msgBuff));
+                read(fd_fifo, &msgBuff, sizeof(MessageData));
+
+                ptpd_msg_handle_routine(&msgBuff);
+            }
+        }
+    }
+
+    close(fd_fifo);
+
+    return (void *)0;
+}
+
+int ptpd_msg_ipc_thread_init(void)
+{
+    pthread_t thread_t;
+
+    if (0 != pthread_create(&thread_t, NULL, ptpd_msg_ipc_thread, NULL))
+    {
+        DBG("create msg thread fifo failed, errno:%d,%s!\n", errno, strerror(errno));
+        return errno;
+    }
+    
+    return 0;
+}
+#endif
+
+
+Boolean startupInProgress;
 
 TimingDomain timingDomain;
 
@@ -97,8 +251,34 @@ main(int argc, char **argv)
 
 	timingDomain.electionDelay = rtOpts.electionDelay;
 
-	/* configure PTP TimeService */
+#ifdef APTP
+      if (init_fifo_msg_comm() != 0)
+      {
+          ERROR(USER_DESCRIPTION" init FIFO IPC failed!!\n");
+          return -1;
+      }
 
+      gAptpShm = PTPClockShmInit();
+      if (gAptpShm == NULL)
+      {
+          ERROR(USER_DESCRIPTION" init Shm IPC failed!!\n");
+          return -1;
+      }
+
+      DBG("Shm init ok, gAptpShm=[0x%x]\n", gAptpShm);
+
+      memset(&gAptpShm->internalData, 0, sizeof(gAptpShm->internalData));
+      gAptpShm->clockIdentity = 0;
+      gAptpShm->aptpd_launched_flag = APTPD_START_IN_PROGRESS;
+
+      if (0 != ptpd_msg_ipc_thread_init())
+      {
+          ERROR(USER_DESCRIPTION" msg IPC thread init failed!!\n");          
+          return -1;
+      }
+#endif
+
+	/* configure PTP TimeService */
 	timingDomain.services[0] = &ptpClock->timingService;
 	ts = timingDomain.services[0];
 	strncpy(ts->id, "PTP0", TIMINGSERVICE_MAX_DESC);
@@ -122,6 +302,10 @@ main(int argc, char **argv)
 	timingDomain.updateInterval = 1;
 
 	startupInProgress = FALSE;
+    
+#ifdef APTP
+      gAptpShm->aptpd_launched_flag = APTPD_STARTED_OK;
+#endif
 
 	/* global variable for message(), please see comment on top of this file */
 	G_ptpClock = ptpClock;

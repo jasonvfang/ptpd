@@ -1138,15 +1138,15 @@ void
 displayPtpClock(const PtpClock * ptpClock)
 {
 
-	displayDefault(ptpClock);
+	//displayDefault(ptpClock);
 	displayCurrent(ptpClock);
 	displayParent(ptpClock);
-	displayGlobal(ptpClock);
+	//displayGlobal(ptpClock);
 	displayPort(ptpClock);
 	displayForeignMaster(ptpClock);
-	displayBuffer(ptpClock);
-	displayOthers(ptpClock);
-	displayCounters(ptpClock);
-	displayStatistics(ptpClock);
+	//displayBuffer(ptpClock);
+	//displayOthers(ptpClock);
+	//displayCounters(ptpClock);
+	//displayStatistics(ptpClock);
 
 }

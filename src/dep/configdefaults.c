@@ -186,6 +186,7 @@ loadDefaultSettings( RunTimeOpts* rtOpts )
 	rtOpts->timeProperties.ptpTimescale = TRUE;
 
 	rtOpts->ipMode = IPMODE_MULTICAST;
+//	rtOpts->ipMode = IPMODE_UNICAST;
 	rtOpts->dot1AS = FALSE;
 
 	rtOpts->disableUdpChecksums = TRUE;

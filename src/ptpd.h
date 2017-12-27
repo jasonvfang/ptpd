@@ -76,6 +76,9 @@
 #include <glob.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <pthread.h>
 #ifdef HAVE_UTMPX_H
 #include <utmpx.h>
 #else
@@ -210,6 +213,46 @@
 #ifdef HAVE_LINUX_RTC_H
 #include <linux/rtc.h>
 #endif /* HAVE_LINUX_RTC_H */
+
+#ifdef APTP
+#define APTPD_MSG_FIFO_NAME "/tmp/aptpd_fifo_to_airplayd"
+
+typedef enum 
+{
+    AddressApiAdd = 1,
+    AddressApiDelete
+} AddressApiMessageType;
+
+typedef struct {
+	unsigned char	opCode;
+	unsigned char	ipAddress[45];
+} MessageData;
+
+
+#define APTP_SHM_ID 36658
+typedef unsigned long long uint64_t;
+
+enum { APTPD_NOT_STARTED = 0, APTPD_START_IN_PROGRESS, APTPD_STARTED_OK};
+
+typedef struct {
+	Integer32 seconds;
+	Integer32 nanoseconds;
+} APtpOffSetInternal;
+
+typedef struct {
+       Boolean aptpd_launched_flag; 
+       unsigned long long clockIdentity;
+       APtpOffSetInternal internalData;/* offset from master */
+       uint64_t local_time;/* nanoseconds of local time */
+       Integer32 size;
+} PTPSharedInternalData;
+
+extern PTPSharedInternalData *gAptpShm;
+
+PTPSharedInternalData* PTPClockShmInit(void);
+
+PTPSharedInternalData* PTPClockShmGet(void);
+#endif
 
 #define SET_ALARM(alarm, val) \
 	setAlarmCondition(&ptpClock->alarms[alarm], val, ptpClock)
